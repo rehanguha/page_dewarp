@@ -47,8 +47,8 @@ SPAN_MIN_WIDTH = 30      # minimum reduced px width for span
 SPAN_PX_PER_STEP = 20    # reduced px spacing for sampling along spans
 FOCAL_LENGTH = 1.2       # normalized focal length of camera
 
-DEBUG_LEVEL = 0          # 0=none, 1=some, 2=lots, 3=all
-DEBUG_OUTPUT = 'file'    # file, screen, both
+DEBUG_LEVEL = 3          # 0=none, 1=some, 2=lots, 3=all
+DEBUG_OUTPUT = 'screen'    # file, screen, both
 
 WINDOW_NAME = 'Dewarp'   # Window name for visualization
 
@@ -446,13 +446,11 @@ def get_contours(name, small, pagemask, masktype):
 
     mask = get_mask(name, small, pagemask, masktype)
 
-    _, contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL,
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL,
                                       cv2.CHAIN_APPROX_NONE)
 
     contours_out = []
-
     for contour in contours:
-
         rect = cv2.boundingRect(contour)
         xmin, ymin, width, height = rect
 
@@ -556,8 +554,8 @@ def sample_spans(shape, spans):
             step = SPAN_PX_PER_STEP
             start = ((len(means)-1) % step) / 2
 
-            contour_points += [(x+xmin, means[x]+ymin)
-                               for x in range(start, len(means), step)]
+            contour_points += [(x+xmin, means[int(x)]+ymin)
+                               for x in range_with_floats(start, len(means), step)]
 
         contour_points = np.array(contour_points,
                                   dtype=np.float32).reshape((-1, 1, 2))
@@ -567,6 +565,11 @@ def sample_spans(shape, spans):
         span_points.append(contour_points)
 
     return span_points
+
+def range_with_floats(start, stop, step):
+    while stop > start:
+        yield start
+        start += step
 
 
 def keypoints_from_samples(name, small, pagemask, page_outline,
@@ -670,7 +673,7 @@ def visualize_spans(name, small, pagemask, spans):
 
     display = small.copy()
     display[mask] = (display[mask]/2) + (regions[mask]/2)
-    display[pagemask == 0] /= 4
+    display[pagemask == 0] //= 4
 
     debug_show(name, 2, 'spans', display)
 
@@ -736,20 +739,20 @@ def optimize_params(name, small, dstpoints, span_counts, params):
         ppts = project_keypoints(pvec, keypoint_index)
         return np.sum((dstpoints - ppts)**2)
 
-    print '  initial objective is', objective(params)
+    print('  initial objective is', objective(params))
 
     if DEBUG_LEVEL >= 1:
         projpts = project_keypoints(params, keypoint_index)
         display = draw_correspondences(small, dstpoints, projpts)
         debug_show(name, 4, 'keypoints before', display)
 
-    print '  optimizing', len(params), 'parameters...'
+    print('  optimizing', len(params), 'parameters...')
     start = datetime.datetime.now()
     res = scipy.optimize.minimize(objective, params,
                                   method='Powell')
     end = datetime.datetime.now()
-    print '  optimization took', round((end-start).total_seconds(), 2), 'sec.'
-    print '  final objective is', res.fun
+    print('  optimization took', round((end-start).total_seconds(), 2), 'sec.')
+    print('  final objective is', res.fun)
     params = res.x
 
     if DEBUG_LEVEL >= 1:
@@ -773,7 +776,7 @@ def get_page_dims(corners, rough_dims, params):
     res = scipy.optimize.minimize(objective, dims, method='Powell')
     dims = res.x
 
-    print '  got page dims', dims[0], 'x', dims[1]
+    print('  got page dims', dims[0], 'x', dims[1])
 
     return dims
 
@@ -786,13 +789,13 @@ def remap_image(name, img, small, page_dims, params):
     width = round_nearest_multiple(height * page_dims[0] / page_dims[1],
                                    REMAP_DECIMATE)
 
-    print '  output will be {}x{}'.format(width, height)
+    print('  output will be {}x{}'.format(width, height))
 
     height_small = height / REMAP_DECIMATE
     width_small = width / REMAP_DECIMATE
 
-    page_x_range = np.linspace(0, page_dims[0], width_small)
-    page_y_range = np.linspace(0, page_dims[1], height_small)
+    page_x_range = np.arange(0, page_dims[0], width_small)
+    page_y_range = np.arange(0, page_dims[1], height_small)
 
     page_x_coords, page_y_coords = np.meshgrid(page_x_range, page_y_range)
 
@@ -823,7 +826,7 @@ def remap_image(name, img, small, page_dims, params):
                                    cv2.THRESH_BINARY, ADAPTIVE_WINSZ, 25)
 
     pil_image = Image.fromarray(thresh)
-    pil_image = pil_image.convert('1')
+    # pil_image = pil_image.convert('1')
 
     threshfile = name + '_thresh.png'
     pil_image.save(threshfile, dpi=(OUTPUT_DPI, OUTPUT_DPI))
@@ -841,7 +844,7 @@ def remap_image(name, img, small, page_dims, params):
 def main():
 
     if len(sys.argv) < 2:
-        print 'usage:', sys.argv[0], 'IMAGE1 [IMAGE2 ...]'
+        print('usage:', sys.argv[0], 'IMAGE1 [IMAGE2 ...]')
         sys.exit(0)
 
     if DEBUG_LEVEL > 0 and DEBUG_OUTPUT != 'file':
@@ -856,8 +859,8 @@ def main():
         basename = os.path.basename(imgfile)
         name, _ = os.path.splitext(basename)
 
-        print 'loaded', basename, 'with size', imgsize(img),
-        print 'and resized to', imgsize(small)
+        print('loaded', basename, 'with size', imgsize(img), end=' ')
+        print('and resized to', imgsize(small))
 
         if DEBUG_LEVEL >= 3:
             debug_show(name, 0.0, 'original', small)
@@ -868,20 +871,20 @@ def main():
         spans = assemble_spans(name, small, pagemask, cinfo_list)
 
         if len(spans) < 3:
-            print '  detecting lines because only', len(spans), 'text spans'
+            print('  detecting lines because only', len(spans), 'text spans')
             cinfo_list = get_contours(name, small, pagemask, 'line')
             spans2 = assemble_spans(name, small, pagemask, cinfo_list)
             if len(spans2) > len(spans):
                 spans = spans2
 
         if len(spans) < 1:
-            print 'skipping', name, 'because only', len(spans), 'spans'
+            print('skipping', name, 'because only', len(spans), 'spans')
             continue
 
         span_points = sample_spans(small.shape, spans)
 
-        print '  got', len(spans), 'spans',
-        print 'with', sum([len(pts) for pts in span_points]), 'points.'
+        print('  got', len(spans), 'spans', end=' ')
+        print('with', sum([len(pts) for pts in span_points]), 'points.')
 
         corners, ycoords, xcoords = keypoints_from_samples(name, small,
                                                            pagemask,
@@ -904,12 +907,76 @@ def main():
 
         outfiles.append(outfile)
 
-        print '  wrote', outfile
-        print
+        print('  wrote', outfile)
+        print()
 
-    print 'to convert to PDF (requires ImageMagick):'
-    print '  convert -compress Group4 ' + ' '.join(outfiles) + ' output.pdf'
+    print('to convert to PDF (requires ImageMagick):')
+    print('  convert -compress Group4 ' + ' '.join(outfiles) + ' output.pdf')
 
+
+
+def main_mod(imgfile):
+
+    for i in range(1):
+        img = cv2.imread(imgfile)
+        small = resize_to_screen(img)
+        basename = os.path.basename(imgfile)
+        name, _ = os.path.splitext(basename)
+
+        print('loaded', basename, 'with size', imgsize(img), end=' ')
+        print('and resized to', imgsize(small))
+
+        if DEBUG_LEVEL >= 3:
+            debug_show(name, 0.0, 'original', small)
+
+        pagemask, page_outline = get_page_extents(small)
+
+        cinfo_list = get_contours(name, small, pagemask, 'text')
+        spans = assemble_spans(name, small, pagemask, cinfo_list)
+
+        if len(spans) < 3:
+            print('  detecting lines because only', len(spans), 'text spans')
+            cinfo_list = get_contours(name, small, pagemask, 'line')
+            spans2 = assemble_spans(name, small, pagemask, cinfo_list)
+            if len(spans2) > len(spans):
+                spans = spans2
+
+        if len(spans) < 1:
+            print('skipping', name, 'because only', len(spans), 'spans')
+            continue
+
+        span_points = sample_spans(small.shape, spans)
+
+        print('  got', len(spans), 'spans', end=' ')
+        print('with', sum([len(pts) for pts in span_points]), 'points.')
+
+        corners, ycoords, xcoords = keypoints_from_samples(name, small,
+                                                            pagemask,
+                                                            page_outline,
+                                                            span_points)
+
+        rough_dims, span_counts, params = get_default_params(corners,
+                                                                ycoords, xcoords)
+
+        dstpoints = np.vstack((corners[0].reshape((1, 1, 2)),) +
+                                tuple(span_points))
+
+        params = optimize_params(name, small,
+                                    dstpoints,
+                                    span_counts, params)
+
+        page_dims = get_page_dims(corners, rough_dims, params)
+
+        outfile = remap_image(name, img, small, page_dims, params)
+        cv2.imwrite(outfile)
+        outfiles.append(outfile)
+
+        print('  wrote', outfile)
+        print()
+
+    print('to convert to PDF (requires ImageMagick):')
+    print('  convert -compress Group4 ' + ' '.join(outfiles) + ' output.pdf')
 
 if __name__ == '__main__':
     main()
+    # main_mod('example_input/boston_cooking_a.jpg')
