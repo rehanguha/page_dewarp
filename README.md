@@ -1,4 +1,4 @@
-page_dewarp
+page_dewarp (Python 3)
 ===========
 
 Page dewarping and thresholding using a "cubic sheet" model - see full writeup at <https://mzucker.github.io/2016/08/15/page-dewarping.html>
